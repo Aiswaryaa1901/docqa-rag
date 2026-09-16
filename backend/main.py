@@ -1,11 +1,15 @@
 from fastapi import FastAPI, File, UploadFile
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
+import chromadb
 import io
 
 app = FastAPI()
 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+chroma_client = chromadb.PersistentClient(path="./chroma_data")
+collection = chroma_client.get_or_create_collection(name="documents")
 
 @app.get("/")
 def read_root():
@@ -35,12 +39,18 @@ async def upload_file(file: UploadFile = File(...)):
     chunks = chunk_text(text)
     embeddings = embedding_model.encode(chunks)
 
+    ids = [f"{file.filename}_chunk_{i}" for i in range(len(chunks))]
+
+    collection.add(
+        ids=ids,
+        embeddings=embeddings.tolist(),
+        documents=chunks,
+        metadatas=[{"filename": file.filename} for _ in chunks]
+    )
+
     return {
-    "filename": file.filename,
-    "char_count": len(text),
-    "num_chunks": len(chunks),
-    "embeddings_shape": embeddings.shape,
-    "first_chunk_preview": chunks[0][:100],
-    "first_embedding_preview": embeddings[0][:5].tolist()
-} 
+        "filename": file.filename,
+        "num_chunks": len(chunks),
+        "message": "Chunks embedded and stored in ChromaDB successfully"
+    }
   
